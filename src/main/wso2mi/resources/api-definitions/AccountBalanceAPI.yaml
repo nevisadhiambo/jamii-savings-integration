@@ -1,0 +1,135 @@
+openapi: 3.0.1
+info:
+  title: Account Balance API
+  description: >
+    Retrieves the current balance and status of a Jamii bank account from the
+    SQLite-backed AccountDataService (1a). Includes request correlation via
+    X-Request-ID and masked logging.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8290/accounts
+    description: MI HTTP listener
+  - url: https://localhost:8253/accounts
+    description: MI HTTPS listener
+
+paths:
+  /{accountNumber}/balance:
+    get:
+      summary: Get account balance
+      description: >
+        Returns the balance, currency, and status of the specified account.
+        accountNumber must be 3–20 alphanumeric characters.
+      operationId: getAccountBalance
+      parameters:
+        - name: accountNumber
+          in: path
+          required: true
+          description: Unique account identifier (3–20 alphanumeric characters).
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9]{3,20}$'
+            example: ACC001
+        - name: X-Request-ID
+          in: header
+          required: false
+          description: >
+            Caller-supplied correlation ID. If omitted, the Synapse MessageID
+            (urn:uuid:…) is used.
+          schema:
+            type: string
+            example: req-abc-123
+      responses:
+        '200':
+          description: Account found — balance returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountBalanceResponse'
+              example:
+                accountNumber: ACC001
+                status: ACTIVE
+                balance:
+                  amount: 125000
+                  currency: KES
+                requestId: req-abc-123
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '400':
+          description: Invalid accountNumber format.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: INVALID_INPUT
+                errorMessage: accountNumber must be 3-20 alphanumeric characters
+                requestId: req-abc-123
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '404':
+          description: Account not found in the database.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: NOT_FOUND
+                errorMessage: Account ACC999 not found
+                requestId: req-abc-123
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '503':
+          description: Database / DSS layer error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: DB_ERROR
+                errorMessage: 'Database error: Connection refused'
+                requestId: req-abc-123
+                timestamp: '2024-01-15T10:30:00.000Z'
+
+components:
+  schemas:
+    AccountBalanceResponse:
+      type: object
+      properties:
+        accountNumber:
+          type: string
+          example: ACC001
+        status:
+          type: string
+          enum: [ACTIVE, DORMANT, CLOSED]
+          example: ACTIVE
+        balance:
+          type: object
+          properties:
+            amount:
+              type: number
+              format: double
+              example: 125000
+            currency:
+              type: string
+              example: KES
+        requestId:
+          type: string
+          example: req-abc-123
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'
+
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          example: NOT_FOUND
+        errorMessage:
+          type: string
+          example: Account ACC999 not found
+        requestId:
+          type: string
+          example: req-abc-123
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'

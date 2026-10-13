@@ -1,0 +1,232 @@
+openapi: 3.0.1
+info:
+  title: Loan Eligibility API
+  description: >
+    SOAP-to-REST transformation gateway (1c). Accepts a JSON loan application,
+    validates it, calls the DataAccess NumberConversion SOAP service
+    (NumberToWords) to obtain a canonical written form of the loan amount, then
+    applies eligibility rules and returns a structured JSON decision.
+
+    Eligibility rules:
+      - loanAmount must be ≤ 500,000 KES
+      - purpose must not be "gambling"
+
+    SOAP backend: http://www.dataaccess.com/webservicesserver/NumberConversion.wso
+  version: 1.0.0
+servers:
+  - url: http://localhost:8290/loans
+    description: MI HTTP listener
+  - url: https://localhost:8253/loans
+    description: MI HTTPS listener
+
+paths:
+  /eligibility:
+    post:
+      summary: Check loan eligibility
+      description: >
+        Validates input, calls the NumberToWords SOAP service for amount
+        verification, applies the eligibility rules, and returns an
+        APPROVED / REJECTED decision with a human-readable reason.
+      operationId: checkLoanEligibility
+      parameters:
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          description: Caller-supplied correlation ID; Synapse MessageID used if absent.
+          schema:
+            type: string
+            example: corr-loan-456
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanEligibilityRequest'
+            examples:
+              approved:
+                summary: Eligible application
+                value:
+                  customerId: C001
+                  loanAmount: 50000
+                  termMonths: 12
+                  purpose: business
+              rejected_amount:
+                summary: Rejected — amount too high
+                value:
+                  customerId: C002
+                  loanAmount: 600000
+                  termMonths: 24
+                  purpose: home
+              rejected_purpose:
+                summary: Rejected — gambling purpose
+                value:
+                  customerId: C003
+                  loanAmount: 10000
+                  termMonths: 6
+                  purpose: gambling
+      responses:
+        '200':
+          description: Eligibility decision returned (may be APPROVED or REJECTED).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanEligibilityResponse'
+              examples:
+                approved:
+                  summary: APPROVED
+                  value:
+                    requestId: corr-loan-456
+                    customerId: C001
+                    decision: APPROVED
+                    reason: All eligibility criteria met
+                    loanDetails:
+                      amount: 50000
+                      currency: KES
+                      termMonths: 12
+                      purpose: business
+                      amountVerification: fifty thousand
+                    timestamp: '2024-01-15T10:30:00.000Z'
+                rejected:
+                  summary: REJECTED — amount
+                  value:
+                    requestId: corr-loan-456
+                    customerId: C002
+                    decision: REJECTED
+                    reason: Loan amount exceeds maximum limit of KES 500,000
+                    loanDetails:
+                      amount: 600000
+                      currency: KES
+                      termMonths: 24
+                      purpose: home
+                      amountVerification: six hundred thousand
+                    timestamp: '2024-01-15T10:30:00.000Z'
+        '400':
+          description: Validation failed — missing or invalid request fields.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_amount:
+                  summary: Missing loanAmount
+                  value:
+                    errorCode: INVALID_INPUT
+                    errorMessage: loanAmount is required
+                    requestId: corr-loan-456
+                    timestamp: '2024-01-15T10:30:00.000Z'
+                zero_amount:
+                  summary: loanAmount ≤ 0
+                  value:
+                    errorCode: INVALID_INPUT
+                    errorMessage: loanAmount must be greater than zero
+                    requestId: corr-loan-456
+                    timestamp: '2024-01-15T10:30:00.000Z'
+        '502':
+          description: SOAP backend returned a SOAP Fault.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: SOAP_FAULT
+                errorMessage: 'Eligibility service returned a fault: Server Error'
+                requestId: corr-loan-456
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '503':
+          description: SOAP backend unreachable or timed out (10 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: SERVICE_UNAVAILABLE
+                errorMessage: Eligibility service is unavailable; please retry later
+                requestId: corr-loan-456
+                timestamp: '2024-01-15T10:30:00.000Z'
+
+components:
+  schemas:
+    LoanEligibilityRequest:
+      type: object
+      required:
+        - customerId
+        - loanAmount
+        - termMonths
+      properties:
+        customerId:
+          type: string
+          description: Unique customer identifier.
+          example: C001
+        loanAmount:
+          type: number
+          format: double
+          description: Requested loan amount in KES. Must be > 0.
+          example: 50000
+        termMonths:
+          type: integer
+          description: Repayment term in months.
+          example: 12
+        purpose:
+          type: string
+          description: >
+            Loan purpose. Defaults to "general" if omitted.
+            "gambling" is explicitly ineligible.
+          example: business
+
+    LoanEligibilityResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          example: corr-loan-456
+        customerId:
+          type: string
+          example: C001
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+          example: APPROVED
+        reason:
+          type: string
+          example: All eligibility criteria met
+        loanDetails:
+          type: object
+          properties:
+            amount:
+              type: number
+              format: double
+              example: 50000
+            currency:
+              type: string
+              example: KES
+            termMonths:
+              type: integer
+              example: 12
+            purpose:
+              type: string
+              example: business
+            amountVerification:
+              type: string
+              description: Written-form of the loan amount from the SOAP NumberToWords service.
+              example: fifty thousand
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'
+
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          example: INVALID_INPUT
+        errorMessage:
+          type: string
+          example: loanAmount is required
+        requestId:
+          type: string
+          example: corr-loan-456
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'

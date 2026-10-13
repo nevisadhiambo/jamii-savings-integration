@@ -1,0 +1,22 @@
+type: api
+version: v4.4.0
+data:
+  name: LoanEligibilityAPI
+  version: 1.0.0
+  context: /loans
+  transport:
+    - http
+    - https
+  visibility: PUBLIC
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://mi:8290/loans
+    sandbox_endpoints:
+      url: http://mi:8290/loans
+  apiPolicies: {}
+  operations:
+    - target: /check-eligibility
+      verb: POST
+      authType: Application & Application User
+      throttlingPolicy: Unlimited

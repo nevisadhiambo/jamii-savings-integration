@@ -1,0 +1,22 @@
+type: api
+version: v4.4.0
+data:
+  name: CustomerProxyAPI
+  version: 1.0.0
+  context: /customers
+  transport:
+    - http
+    - https
+  visibility: PUBLIC
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://mi:8290/customers
+    sandbox_endpoints:
+      url: http://mi:8290/customers
+  apiPolicies: {}
+  operations:
+    - target: /{customerId}
+      verb: GET
+      authType: Application & Application User
+      throttlingPolicy: Unlimited

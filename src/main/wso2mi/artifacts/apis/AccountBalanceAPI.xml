@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  1a — DB-backed API
+  GET /accounts/{accountNumber}/balance
+
+  Flow:
+    1. Generate requestId (from X-Request-ID header, or Synapse MessageID) + timestamp
+    2. Log masked request
+    3. Validate accountNumber format → 400 if invalid
+    4. Call AccountDataService via dataServiceCall (SQLite via DSS)
+    5. Extract rows with local-name() XPath (DSS wraps result in serviceNamespace)
+    6. If no row returned → 404 NOT_FOUND
+    7. Build JSON envelope
+    8. On any DB-level fault → 503 DB_ERROR via faultSequence
+-->
+<api xmlns="http://ws.apache.org/ns/synapse"
+     name="AccountBalanceAPI"
+     context="/accounts">
+
+    <resource methods="GET" uri-template="/{accountNumber}/balance">
+        <inSequence>
+
+            <!-- Strip Accept-Encoding so MI does not return compressed responses -->
+            <property name="Accept-Encoding" action="remove" scope="transport"/>
+
+            <!-- ── Correlation scaffolding ────────────────────────────── -->
+            <!-- Capture Synapse MessageID (urn:uuid:...) via legacy get-property -->
+            <property name="p_msgId" expression="get-property('MessageID')" scope="default"/>
+            <variable name="requestId" type="STRING"
+                expression="${exists(headers[&quot;X-Request-ID&quot;]) ? headers[&quot;X-Request-ID&quot;] : properties.synapse[&quot;p_msgId&quot;]}"/>
+            <variable name="timestamp" type="STRING"
+                expression="${formatDateTime(now(), &quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)}"/>
+            <variable name="accountNumber" type="STRING"
+                expression="${params.pathParams.accountNumber}"/>
+
+            <!-- ── Masked request log ─────────────────────────────────── -->
+            <log category="INFO">
+                <message>REQUEST_IN | requestId=${vars.requestId} | api=AccountBalance | account=***${string(vars.accountNumber)}</message>
+            </log>
+
+            <!-- ── Validate account number format (alphanumeric, 3-20 chars) ── -->
+            <filter source="${vars.accountNumber}" regex="[A-Za-z0-9]{3,20}">
+                <then/>
+                <else>
+                    <variable name="errorCode"    type="STRING"  value="INVALID_INPUT"/>
+                    <variable name="errorMessage" type="STRING"  value="accountNumber must be 3-20 alphanumeric characters"/>
+                    <variable name="httpStatus"   type="INTEGER" value="400"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </else>
+            </filter>
+
+            <!-- Bridge variable → property so dataServiceCall can use $ctx XPath -->
+            <property name="p_accountNumber" expression="${vars.accountNumber}" scope="default"/>
+
+            <!-- ── Call the Data Service ──────────────────────────────── -->
+            <dataServiceCall serviceName="AccountDataService">
+                <source type="inline"/>
+                <operations type="single">
+                    <operation name="GetAccountBalance">
+                        <param name="accountNumber" expression="$ctx:p_accountNumber"/>
+                    </operation>
+                </operations>
+                <target type="body"/>
+            </dataServiceCall>
+
+            <log category="DEBUG">
+                <message>DS_RESPONSE | requestId=${vars.requestId} | body=${payload}</message>
+            </log>
+
+            <!--
+              DSS wraps results in serviceNamespace; use local-name() to match
+              regardless of namespace prefix.
+            -->
+            <variable name="dsAccountNumber" type="STRING"
+                expression="${xpath(&quot;string(//*[local-name()='account_number'])&quot;)}"/>
+
+            <!-- ── 404 if no Account row returned ─────────────────────── -->
+            <filter xpath="${vars.dsAccountNumber == ''}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="NOT_FOUND"/>
+                    <variable name="errorMessage" type="STRING"
+                        expression="${&quot;Account &quot; + vars.accountNumber + &quot; not found&quot;}"/>
+                    <variable name="httpStatus"   type="INTEGER" value="404"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <!-- ── Extract fields from DSS XML response ───────────────── -->
+            <variable name="acctStatus"   type="STRING"
+                expression="${xpath(&quot;string(//*[local-name()='status'])&quot;)}"/>
+            <variable name="acctBalance"  type="STRING"
+                expression="${xpath(&quot;string(//*[local-name()='balance'])&quot;)}"/>
+            <variable name="acctCurrency" type="STRING"
+                expression="${xpath(&quot;string(//*[local-name()='currency'])&quot;)}"/>
+
+            <!-- ── Build success JSON envelope ───────────────────────── -->
+            <payloadFactory media-type="json">
+                <format>{
+  "accountNumber": "${vars.dsAccountNumber}",
+  "status": "${vars.acctStatus}",
+  "balance": {
+    "amount": ${vars.acctBalance},
+    "currency": "${vars.acctCurrency}"
+  },
+  "requestId": "${vars.requestId}",
+  "timestamp": "${vars.timestamp}"
+}</format>
+            </payloadFactory>
+
+            <log category="INFO">
+                <message>RESPONSE_OUT | requestId=${vars.requestId} | api=AccountBalance | status=${vars.acctStatus}</message>
+            </log>
+
+            <property name="messageType" value="application/json" scope="axis2"/>
+            <respond/>
+        </inSequence>
+
+        <!-- ── DB-level fault handler ─────────────────────────────── -->
+        <faultSequence>
+            <variable name="requestId" type="STRING"
+                expression="${exists(vars.requestId) ? vars.requestId : properties.synapse[&quot;MessageID&quot;]}"/>
+            <variable name="timestamp" type="STRING"
+                expression="${formatDateTime(now(), &quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)}"/>
+            <variable name="errorCode"    type="STRING"  value="DB_ERROR"/>
+            <variable name="errorMessage" type="STRING"
+                expression="${&quot;Database error: &quot; + properties.synapse[&quot;ERROR_MESSAGE&quot;]}"/>
+            <variable name="httpStatus"   type="INTEGER" value="503"/>
+            <sequence key="ErrorResponseSequence"/>
+        </faultSequence>
+    </resource>
+</api>

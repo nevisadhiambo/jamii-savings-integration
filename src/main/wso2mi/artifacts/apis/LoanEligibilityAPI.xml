@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  1c — SOAP-to-REST transformation
+  POST /loans/eligibility
+
+  Accepts JSON:
+    { "customerId": "C001", "loanAmount": 50000, "termMonths": 12,
+      "purpose": "business" }
+
+  SOAP backend: DataAccess NumberConversion (NumberToWords operation)
+    WSDL: http://www.dataaccess.com/webservicesserver/NumberConversion.wso?WSDL
+    Namespace: http://www.dataaccess.com/webservicesserver/
+
+  Mapping rationale:
+    • loanAmount is sent to NumberToWords to obtain a canonical written form
+      (e.g. "fifty thousand") — this simulates an external scoring/verification
+      step that returns a structured descriptor.
+    • Eligibility rule: amount <= 500 000 KES AND purpose is not "gambling"
+    • SOAP Fault → mapped to 502 SOAP_FAULT (never leaks raw XML to client)
+
+  Flow:
+    1. Validate JSON input fields (400 on bad input)
+    2. Build SOAP 1.1 envelope
+    3. Call NumberConversion via named endpoint
+    4. On SOAP Fault → faultSequence → 502
+    5. Extract result string from SOAP response via XPath
+    6. Apply eligibility rule
+    7. Return clean JSON
+-->
+<api xmlns="http://ws.apache.org/ns/synapse"
+     name="LoanEligibilityAPI"
+     context="/loans">
+
+    <resource methods="POST" uri-template="/eligibility">
+        <inSequence>
+
+            <!-- Strip Accept-Encoding so MI does not return compressed responses -->
+            <property name="Accept-Encoding" action="remove" scope="transport"/>
+
+            <!-- ── Correlation scaffolding ────────────────────────────── -->
+            <property name="p_msgId" expression="get-property('MessageID')" scope="default"/>
+            <variable name="requestId" type="STRING"
+                expression="${exists(headers[&quot;X-Correlation-ID&quot;]) ? headers[&quot;X-Correlation-ID&quot;] : properties.synapse[&quot;p_msgId&quot;]}"/>
+            <variable name="timestamp" type="STRING"
+                expression="${formatDateTime(now(), &quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)}"/>
+
+            <log category="INFO">
+                <message>REQUEST_IN | requestId=${vars.requestId} | api=LoanEligibility | customerId=*** | amount=***</message>
+            </log>
+
+            <!-- ── Input validation ───────────────────────────────────── -->
+            <filter xpath="${not(exists(payload.loanAmount))}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="INVALID_INPUT"/>
+                    <variable name="errorMessage" type="STRING"  value="loanAmount is required"/>
+                    <variable name="httpStatus"   type="INTEGER" value="400"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <filter xpath="${not(exists(payload.termMonths))}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="INVALID_INPUT"/>
+                    <variable name="errorMessage" type="STRING"  value="termMonths is required"/>
+                    <variable name="httpStatus"   type="INTEGER" value="400"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <filter xpath="${not(exists(payload.customerId))}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="INVALID_INPUT"/>
+                    <variable name="errorMessage" type="STRING"  value="customerId is required"/>
+                    <variable name="httpStatus"   type="INTEGER" value="400"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <filter xpath="${payload.loanAmount &lt;= 0}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="INVALID_INPUT"/>
+                    <variable name="errorMessage" type="STRING"  value="loanAmount must be greater than zero"/>
+                    <variable name="httpStatus"   type="INTEGER" value="400"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <!-- ── Capture input fields before payload is overwritten ── -->
+            <variable name="inputCustomerId" type="STRING"  expression="${payload.customerId}"/>
+            <variable name="inputAmount"     type="DOUBLE"  expression="${payload.loanAmount}"/>
+            <variable name="inputTerm"       type="INTEGER" expression="${payload.termMonths}"/>
+            <variable name="inputPurpose"    type="STRING"
+                expression="${exists(payload.purpose) ? payload.purpose : &quot;general&quot;}"/>
+
+            <!-- ── Build SOAP 1.1 request ─────────────────────────────── -->
+            <!--
+              NumberToWords accepts ubiNum (unsignedLong).
+              We pass the integer part of loanAmount.
+              Namespace: http://www.dataaccess.com/webservicesserver/
+            -->
+            <payloadFactory media-type="xml">
+                <format>
+                    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                                      xmlns:web="http://www.dataaccess.com/webservicesserver/">
+                        <soapenv:Body>
+                            <web:NumberToWords>
+                                <web:ubiNum>${payload.loanAmount}</web:ubiNum>
+                            </web:NumberToWords>
+                        </soapenv:Body>
+                    </soapenv:Envelope>
+                </format>
+            </payloadFactory>
+
+            <property name="SOAPAction" value="NumberToWords" scope="transport"/>
+
+            <log category="INFO">
+                <message>BACKEND_CALL | requestId=${vars.requestId} | backend=NumberConversion | amount=*** term=${vars.inputTerm}</message>
+            </log>
+
+            <!-- ── Call SOAP backend ──────────────────────────────────── -->
+            <call>
+                <endpoint key="NumberConversionEndpoint"/>
+            </call>
+
+            <!-- ── Extract result from SOAP response ─────────────────── -->
+            <!--
+              Response element: <m:NumberToWordsResult xmlns:m="http://www.dataaccess.com/webservicesserver/">
+              After call, payload is JSON (MI auto-converts). Local name match works.
+            -->
+            <variable name="amountInWords" type="STRING"
+                expression="${payload.NumberToWordsResponse.NumberToWordsResult}"/>
+
+            <log category="INFO">
+                <message>BACKEND_RESPONSE | requestId=${vars.requestId} | amountWords=*** (masked)</message>
+            </log>
+
+            <!-- ── Apply eligibility rules ────────────────────────────── -->
+            <!--
+              Rule 1: amount must be <= 500 000 KES
+              Rule 2: purpose must not be "gambling"
+            -->
+            <variable name="isEligible" type="BOOLEAN"
+                expression="${(vars.inputAmount &lt;= 500000) and (vars.inputPurpose != &quot;gambling&quot;)}"/>
+
+            <variable name="decision" type="STRING"
+                expression="${vars.isEligible ? &quot;APPROVED&quot; : &quot;REJECTED&quot;}"/>
+
+            <variable name="decisionReason" type="STRING"
+                expression="${vars.isEligible ? &quot;All eligibility criteria met&quot; : (vars.inputAmount &gt; 500000 ? &quot;Loan amount exceeds maximum limit of KES 500,000&quot; : &quot;Purpose category is not eligible for financing&quot;)}"/>
+
+            <!-- ── Build clean JSON response ──────────────────────────── -->
+            <payloadFactory media-type="json">
+                <format>{
+  "requestId": "${vars.requestId}",
+  "customerId": "${vars.inputCustomerId}",
+  "decision": "${vars.decision}",
+  "reason": "${vars.decisionReason}",
+  "loanDetails": {
+    "amount": ${vars.inputAmount},
+    "currency": "KES",
+    "termMonths": ${vars.inputTerm},
+    "purpose": "${vars.inputPurpose}",
+    "amountVerification": "${vars.amountInWords}"
+  },
+  "timestamp": "${vars.timestamp}"
+}</format>
+            </payloadFactory>
+
+            <log category="INFO">
+                <message>RESPONSE_OUT | requestId=${vars.requestId} | api=LoanEligibility | decision=${vars.decision}</message>
+            </log>
+
+            <property name="messageType" value="application/json" scope="axis2"/>
+            <respond/>
+        </inSequence>
+
+        <!-- ── SOAP fault / timeout fault handler ────────────────────── -->
+        <faultSequence>
+            <variable name="requestId" type="STRING"
+                expression="${exists(vars.requestId) ? vars.requestId : properties.synapse[&quot;MessageID&quot;]}"/>
+            <variable name="timestamp" type="STRING"
+                expression="${formatDateTime(now(), &quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)}"/>
+
+            <!-- Check whether the fault carries a SOAP Fault body -->
+            <variable name="soapFaultString" type="STRING"
+                expression="${xpath(&quot;string(//faultstring)&quot;)}"/>
+
+            <filter xpath="${vars.soapFaultString != ''}">
+                <then>
+                    <!-- SOAP Fault: map to 502, never leak raw XML -->
+                    <variable name="errorCode"    type="STRING" value="SOAP_FAULT"/>
+                    <variable name="errorMessage" type="STRING"
+                        expression="${&quot;Eligibility service returned a fault: &quot; + vars.soapFaultString}"/>
+                    <variable name="httpStatus"   type="INTEGER" value="502"/>
+                </then>
+                <else>
+                    <!-- Transport / timeout -->
+                    <variable name="errorCode"    type="STRING" value="SERVICE_UNAVAILABLE"/>
+                    <variable name="errorMessage" type="STRING" value="Eligibility service is unavailable; please retry later"/>
+                    <variable name="httpStatus"   type="INTEGER" value="503"/>
+                </else>
+            </filter>
+
+            <sequence key="ErrorResponseSequence"/>
+        </faultSequence>
+    </resource>
+</api>

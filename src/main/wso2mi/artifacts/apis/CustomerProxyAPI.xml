@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  1b — Proxy API
+  GET /customers/{customerId}
+
+  Backend: JSONPlaceholder (https://jsonplaceholder.typicode.com/users/{id})
+  Why JSONPlaceholder? Zero-auth, stable, semantically rich user objects with
+  address, company and geo fields — a realistic customer record proxy target.
+
+  Gateway value added:
+    • X-Correlation-ID: injected if the caller didn't send one, propagated upstream
+    • X-Jamii-Source: internal header stripped before forwarding
+    • Timeout: 8 s; backend unavailability handled by faultSequence
+    • Masked log: customerId logged but e-mail/phone from backend are not re-logged
+    • 400 for non-numeric or out-of-range customerId
+-->
+<api xmlns="http://ws.apache.org/ns/synapse"
+     name="CustomerProxyAPI"
+     context="/customers">
+
+    <resource methods="GET" uri-template="/{customerId}">
+        <inSequence>
+
+            <!-- Strip Accept-Encoding so MI does not return compressed responses -->
+            <property name="Accept-Encoding" action="remove" scope="transport"/>
+
+            <!-- ── Correlation scaffolding ────────────────────────────── -->
+            <property name="p_msgId" expression="get-property('MessageID')" scope="default"/>
+            <variable name="requestId" type="STRING"
+                expression="${exists(headers[&quot;X-Correlation-ID&quot;]) ? headers[&quot;X-Correlation-ID&quot;] : properties.synapse[&quot;p_msgId&quot;]}"/>
+            <variable name="timestamp" type="STRING"
+                expression="${formatDateTime(now(), &quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)}"/>
+            <variable name="customerId" type="STRING"
+                expression="${params.pathParams.customerId}"/>
+
+            <log category="INFO">
+                <message>REQUEST_IN | requestId=${vars.requestId} | api=CustomerProxy | customerId=${vars.customerId}</message>
+            </log>
+
+            <!-- ── Validate: customerId must be a positive integer 1-999 ── -->
+            <filter source="${vars.customerId}" regex="[1-9][0-9]{0,2}">
+                <then/>
+                <else>
+                    <variable name="errorCode"    type="STRING"  value="INVALID_INPUT"/>
+                    <variable name="errorMessage" type="STRING"  value="customerId must be a positive integer (1-999)"/>
+                    <variable name="httpStatus"   type="INTEGER" value="400"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </else>
+            </filter>
+
+            <!-- ── Strip internal headers before forwarding ──────────── -->
+            <!-- HTTP transport headers must be removed via property, not header mediator -->
+            <property name="X-Jamii-Source"   action="remove" scope="transport"/>
+            <property name="X-Internal-Token" action="remove" scope="transport"/>
+            <property name="Authorization"    action="remove" scope="transport"/>
+
+            <!-- ── Inject/forward Correlation-ID upstream ─────────────── -->
+            <property name="X-Correlation-ID" expression="${vars.requestId}" scope="transport"/>
+
+            <log category="INFO">
+                <message>BACKEND_CALL | requestId=${vars.requestId} | backend=JSONPlaceholder | path=/users/${vars.customerId}</message>
+            </log>
+
+            <!-- ── Call JSONPlaceholder backend ──────────────────────── -->
+            <http.get configKey="JSONPlaceholderConn">
+                <relativePath>{${"/users/" + vars.customerId}}</relativePath>
+                <headers>[[&quot;Accept&quot;,&quot;application/json&quot;]]</headers>
+                <nonErrorHttpStatusCodes>200,404</nonErrorHttpStatusCodes>
+                <responseVariable>backendResponse</responseVariable>
+                <overwriteBody>false</overwriteBody>
+            </http.get>
+
+            <!-- ── Handle backend 404 (unknown customer) ──────────────── -->
+            <filter xpath="${vars.backendResponse.attributes.statusCode == 404}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="NOT_FOUND"/>
+                    <variable name="errorMessage" type="STRING"
+                        expression="${&quot;Customer &quot; + vars.customerId + &quot; not found&quot;}"/>
+                    <variable name="httpStatus"   type="INTEGER" value="404"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <!-- ── Handle non-2xx other than 404 ──────────────────────── -->
+            <filter xpath="${vars.backendResponse.attributes.statusCode >= 400}">
+                <then>
+                    <variable name="errorCode"    type="STRING"  value="BACKEND_ERROR"/>
+                    <variable name="errorMessage" type="STRING"  value="Backend returned an unexpected error"/>
+                    <variable name="httpStatus"   type="INTEGER"
+                        expression="${vars.backendResponse.attributes.statusCode}"/>
+                    <sequence key="ErrorResponseSequence"/>
+                </then>
+                <else/>
+            </filter>
+
+            <!-- ── Build normalised customer response ─────────────────── -->
+            <!-- We expose selected fields; PII like email/phone are omitted from
+                 the log but kept in the API response as the caller is authenticated. -->
+            <payloadFactory media-type="json">
+                <format>{
+  "customerId": "${vars.backendResponse.payload.id}",
+  "name": "${vars.backendResponse.payload.name}",
+  "username": "${vars.backendResponse.payload.username}",
+  "email": "${vars.backendResponse.payload.email}",
+  "phone": "${vars.backendResponse.payload.phone}",
+  "address": {
+    "street": "${vars.backendResponse.payload.address.street}",
+    "city":   "${vars.backendResponse.payload.address.city}",
+    "zipcode":"${vars.backendResponse.payload.address.zipcode}"
+  },
+  "requestId": "${vars.requestId}",
+  "timestamp": "${vars.timestamp}"
+}</format>
+            </payloadFactory>
+
+            <log category="INFO">
+                <message>RESPONSE_OUT | requestId=${vars.requestId} | api=CustomerProxy | customerId=${vars.customerId}</message>
+            </log>
+
+            <property name="messageType" value="application/json" scope="axis2"/>
+            <respond/>
+        </inSequence>
+
+        <!-- ── Backend-unavailable / timeout fault handler ────────── -->
+        <faultSequence>
+            <variable name="requestId" type="STRING"
+                expression="${exists(vars.requestId) ? vars.requestId : properties.synapse[&quot;MessageID&quot;]}"/>
+            <variable name="timestamp" type="STRING"
+                expression="${formatDateTime(now(), &quot;yyyy-MM-dd'T'HH:mm:ss.SSS'Z'&quot;)}"/>
+            <variable name="errorCode"    type="STRING"  value="BACKEND_UNAVAILABLE"/>
+            <variable name="errorMessage" type="STRING"  value="Customer service backend is unavailable; please retry later"/>
+            <variable name="httpStatus"   type="INTEGER" value="503"/>
+            <sequence key="ErrorResponseSequence"/>
+        </faultSequence>
+    </resource>
+</api>

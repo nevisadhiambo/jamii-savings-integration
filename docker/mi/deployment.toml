@@ -1,0 +1,38 @@
+# WSO2 MI deployment.toml – CI/Docker dev environment
+# Override values are injected via environment variables where supported.
+
+[server]
+hostname = "mi"
+
+[keystore.primary]
+file_name = "repository/resources/security/wso2carbon.jks"
+password   = "wso2carbon"
+alias      = "wso2carbon"
+key_password = "wso2carbon"
+
+[truststore]
+file_name = "repository/resources/security/client-truststore.jks"
+password   = "wso2carbon"
+
+# Internal HTTP/HTTPS listeners
+[[transport.http]]
+listener.port = 8290
+
+[[transport.https]]
+listener.port = 8253
+
+# Management API
+[management_api]
+enabled = true
+port = 9164
+
+# ── Data source for AccountDataService ────────────────────────────────────────
+[[datasource]]
+id = "AccountDS"
+url = "jdbc:mysql://mysql:3306/jamii?useSSL=false&allowPublicKeyRetrieval=true"
+username = "jamii"
+password = "jamiipass"
+driver = "com.mysql.cj.jdbc.Driver"
+pool_options.maxActive = 10
+pool_options.maxWait = 30000
+pool_options.testOnBorrow = true

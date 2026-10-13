@@ -1,0 +1,22 @@
+type: api
+version: v4.4.0
+data:
+  name: AccountBalanceAPI
+  version: 1.0.0
+  context: /accounts
+  transport:
+    - http
+    - https
+  visibility: PUBLIC
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://mi:8290/accounts
+    sandbox_endpoints:
+      url: http://mi:8290/accounts
+  apiPolicies: {}
+  operations:
+    - target: /{accountNumber}/balance
+      verb: GET
+      authType: Application & Application User
+      throttlingPolicy: Unlimited

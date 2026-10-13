@@ -1,0 +1,51 @@
+# WSO2 APIM deployment.toml – CI/Docker dev environment (single-node all-in-one)
+
+[server]
+hostname = "apim"
+node_ip = "127.0.0.1"
+
+[user_store]
+type = "database_unique_id"
+
+[super_admin]
+username = "admin"
+password = "admin"
+create_admin_account = true
+
+[database.apim_db]
+type = "mysql"
+url = "jdbc:mysql://mysql:3306/jamii?useSSL=false&allowPublicKeyRetrieval=true"
+username = "jamii"
+password = "jamiipass"
+driver = "com.mysql.cj.jdbc.Driver"
+pool_options.maxActive = 50
+
+[database.shared_db]
+type = "mysql"
+url = "jdbc:mysql://mysql:3306/jamii?useSSL=false&allowPublicKeyRetrieval=true"
+username = "jamii"
+password = "jamiipass"
+driver = "com.mysql.cj.jdbc.Driver"
+pool_options.maxActive = 50
+
+[keystore.primary]
+file_name = "repository/resources/security/wso2carbon.jks"
+password   = "wso2carbon"
+alias      = "wso2carbon"
+key_password = "wso2carbon"
+
+[truststore]
+file_name = "repository/resources/security/client-truststore.jks"
+password   = "wso2carbon"
+
+[[apim.gateway.environment]]
+name = "Default"
+type = "hybrid"
+display_in_api_console = true
+description = "Default Gateway"
+service_url = "https://localhost:${mgt.transport.https.port}/services/"
+username = "${admin.username}"
+password = "${admin.password}"
+ws_endpoint = "ws://apim:8280"
+http_endpoint = "http://apim:8280"
+https_endpoint = "https://apim:8243"

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<endpoint name="NumberConversionEndpoint" xmlns="http://ws.apache.org/ns/synapse">
+    <address format="soap11" uri="https://www.dataaccess.com/webservicesserver/NumberConversion.wso">
+        <timeout>
+            <duration>10000</duration>
+            <responseAction>fault</responseAction>
+        </timeout>
+        <suspendOnFailure>
+            <initialDuration>2000</initialDuration>
+            <progressionFactor>2</progressionFactor>
+            <maximumDuration>60000</maximumDuration>
+        </suspendOnFailure>
+        <markForSuspension>
+            <retriesBeforeSuspension>2</retriesBeforeSuspension>
+        </markForSuspension>
+    </address>
+</endpoint>

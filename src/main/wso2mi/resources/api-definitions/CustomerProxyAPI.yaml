@@ -1,0 +1,155 @@
+openapi: 3.0.1
+info:
+  title: Customer Proxy API
+  description: >
+    Proxies customer lookup requests to JSONPlaceholder
+    (https://jsonplaceholder.typicode.com/users/{id}), adding gateway
+    value: correlation ID propagation, internal-header stripping, 8 s timeout
+    enforcement, and a normalised JSON envelope (1b).
+  version: 1.0.0
+servers:
+  - url: http://localhost:8290/customers
+    description: MI HTTP listener
+  - url: https://localhost:8253/customers
+    description: MI HTTPS listener
+
+paths:
+  /{customerId}:
+    get:
+      summary: Get customer by ID
+      description: >
+        Fetches customer details from JSONPlaceholder for the given customerId.
+        customerId must be a positive integer between 1 and 999.
+        The gateway strips internal headers (X-Jamii-Source, X-Internal-Token,
+        Authorization) before forwarding and injects/propagates X-Correlation-ID.
+      operationId: getCustomer
+      parameters:
+        - name: customerId
+          in: path
+          required: true
+          description: Numeric customer ID (positive integer, 1–999).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999
+            example: 1
+        - name: X-Correlation-ID
+          in: header
+          required: false
+          description: >
+            Caller-supplied correlation ID. If omitted the Synapse MessageID is
+            used. The value is forwarded upstream as X-Correlation-ID.
+          schema:
+            type: string
+            example: corr-xyz-789
+      responses:
+        '200':
+          description: Customer found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomerResponse'
+              example:
+                customerId: '1'
+                name: Leanne Graham
+                username: Bret
+                email: Sincere@april.biz
+                phone: 1-770-736-0988 x56442
+                address:
+                  street: Kulas Light
+                  city: Gwenborough
+                  zipcode: '92998-3874'
+                requestId: corr-xyz-789
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '400':
+          description: Invalid customerId (not a positive integer in range 1–999).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: INVALID_INPUT
+                errorMessage: customerId must be a positive integer (1-999)
+                requestId: corr-xyz-789
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '404':
+          description: Customer not found at JSONPlaceholder backend.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: NOT_FOUND
+                errorMessage: Customer 999 not found
+                requestId: corr-xyz-789
+                timestamp: '2024-01-15T10:30:00.000Z'
+        '503':
+          description: JSONPlaceholder backend unavailable or timed out (8 s).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                errorCode: BACKEND_UNAVAILABLE
+                errorMessage: Customer service backend is unavailable; please retry later
+                requestId: corr-xyz-789
+                timestamp: '2024-01-15T10:30:00.000Z'
+
+components:
+  schemas:
+    CustomerResponse:
+      type: object
+      properties:
+        customerId:
+          type: string
+          description: Customer ID as returned by the backend (mirrors the path param).
+          example: '1'
+        name:
+          type: string
+          example: Leanne Graham
+        username:
+          type: string
+          example: Bret
+        email:
+          type: string
+          format: email
+          example: Sincere@april.biz
+        phone:
+          type: string
+          example: 1-770-736-0988 x56442
+        address:
+          type: object
+          properties:
+            street:
+              type: string
+              example: Kulas Light
+            city:
+              type: string
+              example: Gwenborough
+            zipcode:
+              type: string
+              example: '92998-3874'
+        requestId:
+          type: string
+          example: corr-xyz-789
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'
+
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+          example: NOT_FOUND
+        errorMessage:
+          type: string
+          example: Customer 999 not found
+        requestId:
+          type: string
+          example: corr-xyz-789
+        timestamp:
+          type: string
+          format: date-time
+          example: '2024-01-15T10:30:00.000Z'

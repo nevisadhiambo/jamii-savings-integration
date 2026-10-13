@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Data Service: AccountDataService
+  Database: SQLite (file-based)
+  Path: {MI_HOME}/repository/database/jamii_accounts.db
+  Schema + seed data are created by AccountDBInitTask ~5 s after MI startup.
+
+  Seeded accounts
+  ┌────────────┬───────────────┬─────────┬───────────┬──────────┐
+  │ ACC001     │ Alice Kamau   │ ACTIVE  │ 125000.00 │ KES      │
+  │ ACC002     │ Bob Ochieng   │ DORMANT │   3750.50 │ KES      │
+  │ ACC003     │ Carol Wanjiku │ CLOSED  │      0.00 │ KES      │
+  └────────────┴───────────────┴─────────┴───────────┴──────────┘
+-->
+<data name="AccountDataService" transports="http https local"
+      serviceNamespace="http://jamii.integration/accounts">
+    <config id="AccountDS">
+        <property name="org.wso2.ws.dataservice.driver">org.sqlite.JDBC</property>
+        <!-- Relative to MI home working dir → {MI_HOME}/jamii_accounts.db -->
+        <property name="org.wso2.ws.dataservice.protocol">jdbc:sqlite:jamii_accounts.db</property>
+        <property name="org.wso2.ws.dataservice.user"></property>
+        <property name="org.wso2.ws.dataservice.password"></property>
+        <property name="org.wso2.ws.dataservice.minpoolsize">1</property>
+        <property name="org.wso2.ws.dataservice.maxpoolsize">10</property>
+        <property name="org.wso2.ws.dataservice.validation_query">SELECT 1</property>
+    </config>
+
+    <!-- Parameterised query — account_number is a bind parameter (no SQL injection) -->
+    <query id="GetAccountBalance" useConfig="AccountDS" returnGeneratedKeys="false">
+        <sql>SELECT account_number, owner_name, status, balance, currency
+             FROM accounts
+             WHERE account_number = ?</sql>
+        <result element="Accounts" rowName="Account">
+            <element name="account_number" column="account_number" xsdType="string"/>
+            <element name="owner_name"     column="owner_name"     xsdType="string"/>
+            <element name="status"         column="status"         xsdType="string"/>
+            <element name="balance"        column="balance"        xsdType="decimal"/>
+            <element name="currency"       column="currency"       xsdType="string"/>
+        </result>
+        <param name="accountNumber" sqlType="STRING"/>
+    </query>
+
+    <operation name="GetAccountBalance" returnRequestStatus="false">
+        <call-query href="GetAccountBalance">
+            <with-param name="accountNumber" query-param="accountNumber"/>
+        </call-query>
+    </operation>
+</data>

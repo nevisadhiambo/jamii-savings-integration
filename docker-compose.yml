@@ -1,0 +1,100 @@
+version: "3.8"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Jamii Integration — local / CI target environment
+#  Services: MySQL (shared DB), WSO2 MI 4.6.0, WSO2 APIM 4.4.0
+#
+#  Usage:
+#    docker compose up -d --wait        # start everything
+#    docker compose down -v             # tear down + remove volumes
+#
+#  The Jenkinsfile calls scripts/ci-up.sh and scripts/ci-down.sh which wrap
+#  these commands and wait for health checks.
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  jamii-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  apim-data:
+
+services:
+
+  # ── MySQL ──────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: jamii-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-rootpass}"
+      MYSQL_DATABASE: jamii
+      MYSQL_USER: jamii
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-jamiipass}"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - jamii-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "3306:3306"
+
+  # ── WSO2 Micro Integrator ──────────────────────────────────────────────────
+  mi:
+    image: wso2/wso2mi:4.6.0
+    container_name: jamii-mi
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - JAVA_OPTS=-Xms256m -Xmx512m
+    volumes:
+      # CAR is copied into this directory by the deploy stage
+      - ./deployment/car:/home/wso2carbon/wso2-artifact-volume/carbonapps
+      # connector ZIPs
+      - ./deployment/libs:/home/wso2carbon/wso2-artifact-volume/libs
+      # optional: mount deployment.toml override for the dev environment
+      - ./docker/mi/deployment.toml:/home/wso2carbon/wso2mi-4.6.0/conf/deployment.toml:ro
+    networks:
+      - jamii-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9164/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    ports:
+      - "8290:8290"   # HTTP passthrough
+      - "8253:8253"   # HTTPS passthrough
+      - "9164:9164"   # Management API
+
+  # ── WSO2 API Manager ───────────────────────────────────────────────────────
+  apim:
+    image: wso2/wso2am:4.4.0
+    container_name: jamii-apim
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+    volumes:
+      - apim-data:/home/wso2carbon/wso2am-4.4.0/repository/data
+      - ./docker/apim/deployment.toml:/home/wso2carbon/wso2am-4.4.0/repository/conf/deployment.toml:ro
+    networks:
+      - jamii-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost:9443/services/Version || exit 1"]
+      interval: 20s
+      timeout: 15s
+      retries: 15
+      start_period: 120s
+    ports:
+      - "9443:9443"   # Publisher / Developer Portal / Admin
+      - "8280:8280"   # HTTP gateway
+      - "8243:8243"   # HTTPS gateway

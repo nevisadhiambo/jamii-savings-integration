@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Shared error-response sequence.
+  Caller must set before invoking:
+    vars.errorCode    (STRING)  – machine-readable code, e.g. "NOT_FOUND"
+    vars.errorMessage (STRING)  – human-readable description
+    vars.httpStatus   (INTEGER) – HTTP status code, e.g. 404
+    vars.requestId    (STRING)  – correlation/request ID
+    vars.timestamp    (STRING)  – ISO-8601 timestamp
+-->
+<sequence xmlns="http://ws.apache.org/ns/synapse" name="ErrorResponseSequence">
+
+    <log category="ERROR">
+        <message>ERROR | code=${vars.errorCode} | msg=${vars.errorMessage} | httpStatus=${vars.httpStatus}</message>
+    </log>
+
+    <payloadFactory media-type="json">
+        <format>{
+  "error": {
+    "code": "${vars.errorCode}",
+    "message": "${vars.errorMessage}",
+    "requestId": "${vars.requestId}"
+  },
+  "timestamp": "${vars.timestamp}"
+}</format>
+    </payloadFactory>
+
+    <property name="HTTP_SC" expression="${vars.httpStatus}" scope="axis2"/>
+    <property name="messageType" value="application/json" scope="axis2"/>
+    <respond/>
+</sequence>
