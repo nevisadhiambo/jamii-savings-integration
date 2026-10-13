@@ -8,15 +8,33 @@ data:
     - http
     - https
   visibility: PUBLIC
+
+  # ── Security: OAuth2 (Client Credentials) ────────────────────────────────
+  # Loan eligibility decisions are financially consequential. OAuth2 with the
+  # write:loans scope ensures only authorised clients can submit applications,
+  # enabling per-client audit trails and immediate credential revocation.
+  securityScheme:
+    - oauth2
+
+  # ── Throttling tier: Silver (2000 req/min) ────────────────────────────────
+  # REASON: Each request triggers a synchronous SOAP call to the external
+  # DataAccess NumberConversion service. Silver moderates load on that
+  # third-party SOAP backend without being as restrictive as Bronze.
+  apiThrottlingPolicy: Silver
+
   endpointConfig:
     endpoint_type: http
     production_endpoints:
       url: http://mi:8290/loans
     sandbox_endpoints:
       url: http://mi:8290/loans
+
   apiPolicies: {}
+
   operations:
-    - target: /check-eligibility
+    - target: /eligibility
       verb: POST
       authType: Application & Application User
-      throttlingPolicy: Unlimited
+      throttlingPolicy: Silver
+      scopes:
+        - write:loans

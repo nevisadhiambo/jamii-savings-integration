@@ -1,0 +1,28 @@
+{# JamiiHeaderInject – Synapse sequence template (Jinja2)
+   Rendered by APIM at import time for each flow (request / response).
+   Template variables injected by APIM from policy parameters:
+     {{ headerName }}  – header name supplied via api.yaml policyParameters
+     {{ headerValue }} – header value supplied via api.yaml policyParameters
+#}
+<sequence xmlns="http://ws.apache.org/ns/synapse"
+          name="JamiiHeaderInject_{{flow}}_{{direction}}">
+    <!--
+      Custom gateway mediation: Jamii traceability header injection.
+      Applied to AccountBalanceAPI ({{direction}} {{flow}} flow).
+
+      Request flow  → adds X-Jamii-Validated to inform MI that the caller
+                       has passed APIM OAuth2 validation.
+      Response flow → adds X-Powered-By and X-Jamii-API-Version for
+                       consumer-side observability.
+    -->
+    <header name="{{ headerName }}"
+            value="{{ headerValue }}"
+            scope="transport"/>
+
+    {% if flow == "response" %}
+    <!-- Additional fixed response header: expose API version to consumers -->
+    <header name="X-Jamii-API-Version"
+            value="AccountBalanceAPI/1.0.0"
+            scope="transport"/>
+    {% endif %}
+</sequence>

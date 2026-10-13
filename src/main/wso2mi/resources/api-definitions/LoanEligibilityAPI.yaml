@@ -144,7 +144,24 @@ paths:
                 requestId: corr-loan-456
                 timestamp: '2024-01-15T10:30:00.000Z'
 
+security:
+  - OAuth2:
+      - write:loans
+
 components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: >
+        OAuth2 Client Credentials flow issued by the WSO2 APIM Token endpoint.
+        Scope: write:loans (permits submission of loan eligibility requests).
+        Loan decisions involve SOAP backend calls, so client identity is required.
+      flows:
+        clientCredentials:
+          tokenUrl: https://apim:8243/token
+          scopes:
+            write:loans: Submit loan eligibility check requests
+
   schemas:
     LoanEligibilityRequest:
       type: object

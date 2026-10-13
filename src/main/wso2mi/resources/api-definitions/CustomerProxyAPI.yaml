@@ -95,7 +95,19 @@ paths:
                 requestId: corr-xyz-789
                 timestamp: '2024-01-15T10:30:00.000Z'
 
+security:
+  - ApiKeyAuth: []
+
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      description: >
+        API Key issued by the WSO2 APIM Developer Portal on subscription.
+        Pass in the X-API-Key request header.
+      in: header
+      name: X-API-Key
+
   schemas:
     CustomerResponse:
       type: object

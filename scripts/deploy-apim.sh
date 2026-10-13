@@ -74,10 +74,29 @@ import_api "AccountBalanceAPI"
 import_api "CustomerProxyAPI"
 import_api "LoanEligibilityAPI"
 
-# ── 5. Fail if any import failed ──────────────────────────────────────────────
+# ── 5. Fail fast if any individual API import failed ─────────────────────────
 if [ ${#FAILED_APIS[@]} -gt 0 ]; then
   echo "[deploy-apim] ERROR: the following API imports failed: ${FAILED_APIS[*]}"
+  echo "[deploy-apim] Skipping API Product import — all three APIs must succeed first."
   exit 1
 fi
 
 echo "[deploy-apim] All three APIs imported successfully."
+
+# ── 6. Import the JamiiiBankingPlatform API Product ───────────────────────────
+# The API Product bundles all three APIs under a single subscribable unit.
+# It must be imported AFTER the individual APIs exist in APIM.
+PRODUCT_DIR="${PROJECT_ROOT}/apim/api-products/JamiiiBankingPlatform"
+echo "[deploy-apim] Importing API Product: JamiiiBankingPlatform ..."
+if apictl import api-product \
+    --file "$PRODUCT_DIR" \
+    --environment "$APIM_ENV_NAME" \
+    --update \
+    --insecure; then
+  echo "[deploy-apim]   JamiiiBankingPlatform API Product → OK"
+else
+  echo "[deploy-apim] ERROR: API Product import failed"
+  exit 1
+fi
+
+echo "[deploy-apim] All three APIs and the API Product imported successfully."

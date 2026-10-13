@@ -1,0 +1,33 @@
+type: operation-policy-specification
+version: v4.4.0
+data:
+  name: JamiiHeaderInject
+  version: v1
+  displayName: Jamii Gateway Header Injection
+  description: >
+    Custom gateway mediation policy applied to AccountBalanceAPI.
+    On the request flow: injects X-Jamii-Validated to signal the request
+    passed gateway-level security checks.
+    On the response flow: injects X-Powered-By for gateway traceability and
+    X-Jamii-API-Version so consumers can detect the API version without
+    parsing the URL.
+  applicableFlows:
+    - request
+    - response
+  supportedGatewayTypes:
+    - Synapse
+  supportedApiTypes:
+    - REST
+  policyAttributes:
+    - name: headerName
+      displayName: Header Name
+      description: Name of the HTTP header to inject.
+      allowedValues: []
+      required: true
+      type: String
+    - name: headerValue
+      displayName: Header Value
+      description: Value to set on the injected header.
+      allowedValues: []
+      required: true
+      type: String

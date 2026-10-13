@@ -87,7 +87,23 @@ paths:
                 requestId: req-abc-123
                 timestamp: '2024-01-15T10:30:00.000Z'
 
+security:
+  - OAuth2:
+      - read:accounts
+
 components:
+  securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: >
+        OAuth2 Client Credentials flow issued by the WSO2 APIM Token endpoint.
+        Scope: read:accounts (grants read access to account balance data).
+      flows:
+        clientCredentials:
+          tokenUrl: https://apim:8243/token
+          scopes:
+            read:accounts: Read account balance and status
+
   schemas:
     AccountBalanceResponse:
       type: object
