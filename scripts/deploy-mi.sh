@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# deploy-mi.sh – deploy the MI Carbon Application to a running MI instance.
-#
-# Environment variables (with defaults for docker-compose dev):
-#   MI_HOST        – MI management API host   (default: localhost)
-#   MI_MGMT_PORT   – MI management API port   (default: 9164)
-#   MI_USERNAME    – MI admin username         (default: admin)
-#   MI_PASSWORD    – MI admin password         (default: admin)
-#   CAR_FILE       – path to the .car artifact (required)
-#
-# The MI Management API supports uploading a CAR via:
-#   POST /management/application
 set -euo pipefail
 
 MI_HOST="${MI_HOST:-localhost}"

@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# ci-down.sh – tear down the docker-compose stack (always runs, even on failure).
 set -euo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"

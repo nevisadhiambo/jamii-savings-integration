@@ -1,6 +1,3 @@
-# WSO2 MI deployment.toml – CI/Docker dev environment
-# Override values are injected via environment variables where supported.
-
 [server]
 hostname = "mi"
 
@@ -14,19 +11,16 @@ key_password = "wso2carbon"
 file_name = "repository/resources/security/client-truststore.jks"
 password   = "wso2carbon"
 
-# Internal HTTP/HTTPS listeners
 [[transport.http]]
 listener.port = 8290
 
 [[transport.https]]
 listener.port = 8253
 
-# Management API
 [management_api]
 enabled = true
 port = 9164
 
-# ── Data source for AccountDataService ────────────────────────────────────────
 [[datasource]]
 id = "AccountDS"
 url = "jdbc:mysql://mysql:3306/jamii?useSSL=false&allowPublicKeyRetrieval=true"

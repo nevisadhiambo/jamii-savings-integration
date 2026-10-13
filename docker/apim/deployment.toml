@@ -1,5 +1,3 @@
-# WSO2 APIM deployment.toml – CI/Docker dev environment (single-node all-in-one)
-
 [server]
 hostname = "apim"
 node_ip = "127.0.0.1"

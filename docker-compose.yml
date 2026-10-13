@@ -1,17 +1,5 @@
 version: "3.8"
 
-# ─────────────────────────────────────────────────────────────────────────────
-#  Jamii Integration — local / CI target environment
-#  Services: MySQL (shared DB), WSO2 MI 4.6.0, WSO2 APIM 4.4.0
-#
-#  Usage:
-#    docker compose up -d --wait        # start everything
-#    docker compose down -v             # tear down + remove volumes
-#
-#  The Jenkinsfile calls scripts/ci-up.sh and scripts/ci-down.sh which wrap
-#  these commands and wait for health checks.
-# ─────────────────────────────────────────────────────────────────────────────
-
 networks:
   jamii-net:
     driver: bridge
@@ -22,7 +10,6 @@ volumes:
 
 services:
 
-  # ── MySQL ──────────────────────────────────────────────────────────────────
   mysql:
     image: mysql:8.0
     container_name: jamii-mysql
@@ -45,7 +32,6 @@ services:
     ports:
       - "3306:3306"
 
-  # ── WSO2 Micro Integrator ──────────────────────────────────────────────────
   mi:
     image: wso2/wso2mi:4.6.0
     container_name: jamii-mi
@@ -55,11 +41,8 @@ services:
     environment:
       - JAVA_OPTS=-Xms256m -Xmx512m
     volumes:
-      # CAR is copied into this directory by the deploy stage
       - ./deployment/car:/home/wso2carbon/wso2-artifact-volume/carbonapps
-      # connector ZIPs
       - ./deployment/libs:/home/wso2carbon/wso2-artifact-volume/libs
-      # optional: mount deployment.toml override for the dev environment
       - ./docker/mi/deployment.toml:/home/wso2carbon/wso2mi-4.6.0/conf/deployment.toml:ro
     networks:
       - jamii-net
@@ -70,11 +53,10 @@ services:
       retries: 12
       start_period: 60s
     ports:
-      - "8290:8290"   # HTTP passthrough
-      - "8253:8253"   # HTTPS passthrough
-      - "9164:9164"   # Management API
+      - "8290:8290"
+      - "8253:8253"
+      - "9164:9164"
 
-  # ── WSO2 API Manager ───────────────────────────────────────────────────────
   apim:
     image: wso2/wso2am:4.4.0
     container_name: jamii-apim
@@ -95,6 +77,6 @@ services:
       retries: 15
       start_period: 120s
     ports:
-      - "9443:9443"   # Publisher / Developer Portal / Admin
-      - "8280:8280"   # HTTP gateway
-      - "8243:8243"   # HTTPS gateway
+      - "9443:9443"
+      - "8280:8280"
+      - "8243:8243"

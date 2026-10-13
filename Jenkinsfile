@@ -1,58 +1,29 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Jamii Integration – Declarative Jenkins Pipeline
-//
-// Stages (all three APIs handled as one unit; any failure fails the pipeline):
-//   1. Checkout
-//   2. Build MI artifacts          (mvn clean install, produces .car)
-//   3. Package APIM projects       (sync OpenAPI defs into apictl project dirs)
-//   4. Run Synapse unit tests      (mvn test via synapse-unit-test-maven-plugin)
-// ── DEV environment ──────────────────────────────────────────────────────────
-//   5. Start dev environment       (docker-compose up)
-//   6. Deploy MI composite app     (scripts/deploy-mi.sh)
-//   7. Deploy APIM APIs            (scripts/deploy-apim.sh – all three)
-//   8. Smoke tests                 (scripts/smoke-test.sh)
-//   9. Stop dev environment        (always, even on failure)
-// ── PROD promotion ───────────────────────────────────────────────────────────
-//  10. Promote to prod             (manual gate + deploy to prod APIM/MI)
-// ─────────────────────────────────────────────────────────────────────────────
-
 pipeline {
 
-  agent { label 'docker' }   // requires: docker, docker compose, java 17+, mvn, apictl, curl
+  agent { label 'docker' }
 
-  // ── Environment defaults (override via Jenkins Credentials / Manage Jenkins) ──
   environment {
-    // Artifact metadata
     ARTIFACT_ID   = 'jamii-integration'
     ARTIFACT_VER  = '1.0.0'
     CAR_FILE      = "target/${ARTIFACT_ID}_${ARTIFACT_VER}.car"
 
-    // ── Dev environment ───────────────────────────────────────────────────────
     DEV_MI_HOST       = 'localhost'
     DEV_MI_MGMT_PORT  = '9164'
     DEV_MI_HTTP_PORT  = '8290'
     DEV_APIM_HOST     = 'localhost'
     DEV_APIM_PORT     = '9443'
     DEV_APIM_ENV      = 'dev'
-
-    // Credentials IDs configured in Jenkins → Manage Credentials:
-    //   jamii-dev-mi-creds   → username/password  (MI admin)
-    //   jamii-dev-apim-creds → username/password  (APIM admin)
-    //   jamii-prod-mi-creds  → username/password  (prod MI admin)
-    //   jamii-prod-apim-creds→ username/password  (prod APIM admin)
   }
 
   options {
     buildDiscarder(logRotator(numToKeepStr: '20'))
     timestamps()
     timeout(time: 45, unit: 'MINUTES')
-    // Prevent concurrent runs that could race on the docker-compose ports
     disableConcurrentBuilds()
   }
 
   stages {
 
-    // ─────────────────────────────────────────────────────────────────────────
     stage('Checkout') {
       steps {
         checkout scm
@@ -60,14 +31,11 @@ pipeline {
       }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     stage('Build MI Artifacts') {
       steps {
         sh 'mvn clean install -DskipTests -B'
-        // Verify the CAR was produced
         script {
-          def carExists = fileExists(env.CAR_FILE)
-          if (!carExists) {
+          if (!fileExists(env.CAR_FILE)) {
             error "Expected CAR not found: ${env.CAR_FILE}"
           }
           echo "CAR artifact ready: ${env.CAR_FILE}"
@@ -80,10 +48,6 @@ pipeline {
       }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
-    // Package APIM projects: copy the latest OpenAPI definitions into each
-    // apictl project folder so they are in sync with what was just built.
-    // ─────────────────────────────────────────────────────────────────────────
     stage('Package APIM Projects') {
       steps {
         script {
@@ -98,17 +62,12 @@ pipeline {
             echo "Packaged OpenAPI definition for ${api}"
           }
         }
-        // Archive the apictl project directories for traceability
         archiveArtifacts artifacts: 'apim/apis/**', allowEmptyArchive: true
       }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────
     stage('Run Synapse Unit Tests') {
       steps {
-        // The synapse-unit-test-maven-plugin downloads and starts a local MI
-        // server to execute unit tests defined in src/test/wso2mi/.
-        // Skip if there are no test files (plugin handles maven.test.skip=true).
         script {
           def hasTests = sh(
             script: 'find src/test/wso2mi -name "*.xml" 2>/dev/null | head -1',
@@ -124,28 +83,18 @@ pipeline {
       }
       post {
         always {
-          // Publish JUnit-compatible results if the plugin produces them
           junit allowEmptyResults: true,
                 testResults: 'target/surefire-reports/*.xml'
         }
       }
     }
 
-    // ═════════════════════════════════════════════════════════════════════════
-    //  DEV ENVIRONMENT
-    // ═════════════════════════════════════════════════════════════════════════
-
     stage('Dev – Start Environment') {
       steps {
-        // Prepare deployment directory that the MI container volume-mounts
         sh 'mkdir -p deployment/car deployment/libs'
         sh "cp '${env.CAR_FILE}' deployment/car/"
-
-        // Copy connector ZIPs from target/  (maven-dependency-plugin output)
         sh '''
-          if ls deployment/libs/*.zip 1>/dev/null 2>&1; then
-            echo "Connector ZIPs already in deployment/libs/"
-          else
+          if ! ls deployment/libs/*.zip 1>/dev/null 2>&1; then
             cp target/lib/*.zip deployment/libs/ 2>/dev/null || true
           fi
         '''
@@ -172,8 +121,6 @@ pipeline {
     }
 
     stage('Dev – Deploy APIM APIs') {
-      // All three APIs are deployed in a single script invocation.
-      // The script fails the stage (and the pipeline) if any one of them fails.
       steps {
         withCredentials([usernamePassword(
           credentialsId: 'jamii-dev-apim-creds',
@@ -200,10 +147,6 @@ pipeline {
         """
       }
     }
-
-    // ═════════════════════════════════════════════════════════════════════════
-    //  PROD PROMOTION  (manual input gate – only on main branch)
-    // ═════════════════════════════════════════════════════════════════════════
 
     stage('Prod – Manual Approval') {
       when {
@@ -268,23 +211,18 @@ pipeline {
       }
     }
 
-  } // end stages
+  }
 
-  // ── Post actions ───────────────────────────────────────────────────────────
   post {
     always {
-      // Always tear down the dev docker-compose stack, even on failure
       sh 'bash scripts/ci-down.sh 2>/dev/null || true'
-
-      // Clean up copied CAR from deployment dir so it isn't re-used by the
-      // next build accidentally
       sh 'rm -f deployment/car/*.car'
     }
     success {
-      echo "Pipeline succeeded. Artifacts archived and APIs deployed."
+      echo "Pipeline succeeded."
     }
     failure {
-      echo "Pipeline FAILED. Check logs above for the failing stage."
+      echo "Pipeline FAILED. Check stage logs above."
     }
   }
 }

@@ -13,12 +13,8 @@ data:
   visibility: PUBLIC
   state: PUBLISHED
 
-  # Subscribers get access to all three APIs under one application subscription.
-  # The per-API throttling tiers (Gold / Bronze / Silver) still apply per route;
-  # this product-level tier caps total product usage across all included APIs.
   apiThrottlingPolicy: Unlimited
 
-  # ── Included APIs and their exposed operations ────────────────────────────
   apis:
     - name: AccountBalanceAPI
       version: 1.0.0
@@ -38,10 +34,8 @@ data:
         - target: /eligibility
           verb: POST
 
-  # ── Subscription availability ─────────────────────────────────────────────
   subscriptionAvailability: CURRENT_TENANT
 
-  # ── Business information (surfaces in Developer Portal) ───────────────────
   businessInformation:
     businessOwner: Jamii Engineering
     businessOwnerEmail: engineering@jamii.example.com

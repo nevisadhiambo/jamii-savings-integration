@@ -9,16 +9,8 @@ data:
     - https
   visibility: PUBLIC
 
-  # ── Security: OAuth2 (Client Credentials) ────────────────────────────────
-  # Account balance data is financial PII; OAuth2 ensures every caller has a
-  # registered client identity and only the read:accounts scope is permitted.
   securityScheme:
     - oauth2
-
-  # ── Throttling tier: Gold (500 req/min) ──────────────────────────────────
-  # Balance queries are frequent, low-latency reads driven by authenticated
-  # banking clients polling on behalf of users. Gold allows adequate throughput
-  # while still protecting the MI/DB layer from runaway callers.
   apiThrottlingPolicy: Gold
 
   endpointConfig:
@@ -28,8 +20,6 @@ data:
     sandbox_endpoints:
       url: http://mi:8290/accounts
 
-  # ── API-level gateway policy: inject traceability headers ────────────────
-  # Applies JamiiHeaderInject on every request/response regardless of operation.
   apiPolicies:
     request:
       - policyName: JamiiHeaderInject

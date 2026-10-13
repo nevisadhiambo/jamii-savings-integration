@@ -9,17 +9,8 @@ data:
     - https
   visibility: PUBLIC
 
-  # ── Security: API Key ─────────────────────────────────────────────────────
-  # Customer lookup is a lower-sensitivity read proxying to JSONPlaceholder.
-  # API Key is sufficient: it enforces subscription identity without OAuth2
-  # token-exchange overhead, keeping latency low for simple GETs.
   securityScheme:
     - api_key
-
-  # ── Throttling tier: Bronze (1 req/min per subscription) ─────────────────
-  # REASON: This API proxies to the external JSONPlaceholder service which has
-  # no published SLA. Bronze protects the upstream from Jamii-driven traffic
-  # spikes and avoids triggering upstream IP rate-limits or bans.
   apiThrottlingPolicy: Bronze
 
   endpointConfig:

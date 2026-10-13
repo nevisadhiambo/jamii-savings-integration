@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# ci-up.sh – spin up the docker-compose stack and wait until all services are healthy.
-# Called by the Jenkinsfile "Start environment" step.
 set -euo pipefail
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
-TIMEOUT="${STACK_STARTUP_TIMEOUT:-300}"   # seconds to wait for healthy state
+TIMEOUT="${STACK_STARTUP_TIMEOUT:-300}"
 
-echo "[ci-up] Starting Jamii integration stack..."
+echo "[ci-up] Starting stack..."
 docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
-echo "[ci-up] Waiting up to ${TIMEOUT}s for all services to become healthy..."
+echo "[ci-up] Waiting up to ${TIMEOUT}s for healthy state..."
 elapsed=0
 interval=10
 
@@ -30,7 +28,6 @@ print('\n'.join(unhealthy))
   echo "[ci-up] Waiting... (${elapsed}s elapsed)"
 done
 
-# Final explicit health check
 all_healthy=true
 for svc in mysql mi apim; do
   state=$(docker inspect --format='{{.State.Health.Status}}' "jamii-${svc}" 2>/dev/null || echo "missing")
