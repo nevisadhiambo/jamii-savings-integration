@@ -2,6 +2,10 @@
 
 A WSO2 MI 4.6.0 integration project implementing three REST APIs that demonstrate the three core integration styles: database-backed queries, HTTP reverse-proxy/gateway, and SOAP-to-REST transformation — all published as managed APIs through WSO2 API Manager 4.4.0.
 
+## Project Walkthrough
+
+A recorded walkthrough of this project is available here: [Watch on Loom](https://www.loom.com/share/7fe4a08f968e44d29d1c1f50fb0b2a8a)
+
 ---
 
 ## Architecture Decisions & Trade-offs
